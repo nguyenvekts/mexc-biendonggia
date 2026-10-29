@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 TOKEN   = os.environ["TG_TOKEN"]
 CHAT_ID = os.environ["TG_CHAT_ID"]
 
-MIN_PCT      = 5.0        # ngưỡng tăng 24h (%)
+MIN_PCT      = 20.0        # ngưỡng tăng 24h (%)
 MIN_VOL_USDT = 1_000_000   # khối lượng 24h tối thiểu (USDT)
 
 # Khung giờ yên lặng theo giờ Việt Nam (UTC+7): 00:00 -> 05:30
