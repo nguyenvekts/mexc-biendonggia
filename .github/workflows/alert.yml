@@ -7,14 +7,21 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: cg_cache.json
+          key: cg-cache-${{ github.run_id }}
+          restore-keys: |
+            cg-cache-
       - run: pip install requests
       - run: python mexc_alert.py
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          CG_API_KEY: ${{ secrets.CG_API_KEY }}
