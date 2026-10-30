@@ -1,7 +1,5 @@
 name: mexc-alert
 on:
-  schedule:
-    - cron: "7,37 * * * *"
   workflow_dispatch:
 concurrency:
   group: mexc-alert
@@ -9,7 +7,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 62
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
