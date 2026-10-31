@@ -1,24 +1,24 @@
 import os, re, json, math, time, requests
 from datetime import datetime, timezone, timedelta
 
-TOKEN   = os.environ["TG_TOKEN"]
+TOKEN = os.environ["TG_TOKEN"]
 CHAT_ID = os.environ["TG_CHAT_ID"]
-CG_KEY  = os.environ.get("CG_API_KEY", "")
+CG_KEY = os.environ.get("CG_API_KEY", "")
 
-MIN_PCT      = 20.0
+MIN_PCT = 20.0
 MIN_VOL_USDT = 1_000_000
-QUIET_START  = (0, 0)
-QUIET_END    = (5, 30)
-STOCK_BASES  = {"COIN", "HOOD", "NVDA", "AAPL", "AMZN", "GOOGL", "TSLA", "MCD"}
+QUIET_START = (0, 0)
+QUIET_END = (5, 30)
+STOCK_BASES = {"COIN", "HOOD", "NVDA", "AAPL", "AMZN", "GOOGL", "TSLA", "MCD"}
 
-MAX_ENRICH  = 8        # chỉ tra thông tin chi tiết cho tối đa 8 coin/lượt
-CACHE_FILE  = "cg_cache.json"
-CACHE_TTL_H = 24       # nhớ kết quả tìm thấy 24 giờ
-MISS_TTL_H  = 6        # nhớ kết quả "không thấy" 6 giờ
+MAX_ENRICH = 8
+CACHE_FILE = "cg_cache.json"
+CACHE_TTL_H = 24
+MISS_TTL_H = 6
 
 BASE = "https://contract.mexc.com/api/v1/contract"
 LINK = "https://www.mexc.com/vi-VN/futures/{sym}?_from=market"
-CG   = "https://api.coingecko.com/api/v3"
+CG = "https://api.coingecko.com/api/v3"
 
 TAG_RULES = [
     (r"\bmeme", "Meme"),
@@ -39,44 +39,60 @@ TAG_RULES = [
     (r"prediction market", "Prediction market"),
 ]
 
+
 def now_vn():
     return datetime.now(timezone(timedelta(hours=7)))
+
 
 def in_quiet_hours():
     n = now_vn()
     return QUIET_START <= (n.hour, n.minute) < QUIET_END
 
+
 def get(path, params=None, tries=3):
     for i in range(tries):
         try:
-            return requests.get(f"{BASE}/{path}", params=params, timeout=20).json()["data"]
+            url = f"{BASE}/{path}"
+            r = requests.get(url, params=params, timeout=20)
+            return r.json()["data"]
         except Exception as e:
             print(f"Lỗi gọi {path} (lần {i+1}):", e)
             time.sleep(5)
     raise RuntimeError(f"Không lấy được {path}")
 
+
 def tg(text):
-    chunks, cur = [], ""
+    chunks = []
+    cur = ""
     for line in text.split("\n"):
         if len(cur) + len(line) + 1 > 3800:
-            chunks.append(cur); cur = ""
+            chunks.append(cur)
+            cur = ""
         cur += line + "\n"
     if cur.strip():
         chunks.append(cur)
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     for c in chunks:
-        r = requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                          data={"chat_id": CHAT_ID, "text": c,
-                                "disable_web_page_preview": "true"}, timeout=15)
+        payload = {
+            "chat_id": CHAT_ID,
+            "text": c,
+            "disable_web_page_preview": "true",
+        }
+        r = requests.post(url, data=payload, timeout=15)
         print("Telegram:", r.status_code)
+
 
 # ---------- CoinGecko + bộ nhớ ----------
 cg_blocked = False
+
 
 def cg_get(path, params=None):
     global cg_blocked
     if cg_blocked:
         return None
-    headers = {"x-cg-demo-api-key": CG_KEY} if CG_KEY else {}
+    headers = {}
+    if CG_KEY:
+        headers["x-cg-demo-api-key"] = CG_KEY
     time.sleep(2.5)
     try:
         r = requests.get(CG + path, params=params, headers=headers, timeout=20)
@@ -90,6 +106,7 @@ def cg_get(path, params=None):
         print("Lỗi CoinGecko", path, e)
         return None
 
+
 def load_cache():
     try:
         with open(CACHE_FILE, encoding="utf-8") as f:
@@ -97,12 +114,18 @@ def load_cache():
     except Exception:
         return {}
 
+
 def save_cache(c):
     try:
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(c, f, ensure_ascii=False)
     except Exception as e:
         print("Không lưu được cache:", e)
+
+
+def rank_key(c):
+    return c.get("market_cap_rank") or 10**9
+
 
 def cg_lookup(base):
     names = [base]
@@ -113,24 +136,17 @@ def cg_lookup(base):
         res = cg_get("/search", {"query": name})
         if res is None:
             return None
-        exact = [c for c in res.get("coins", [])
-                 if (c.get("symbol") or "").upper() == name.upper()]
+        exact = []
+        for c in res.get("coins", []):
+            if (c.get("symbol") or "").upper() == name.upper():
+                exact.append(c)
         if not exact:
             continue
-        exact.sort(key=lambda c: c.get("market_cap_rank") or 10**9)
+        exact.sort(key=rank_key)
         best = exact[0]
-        d = cg_get(f"/coins/{best['id']}", {
-            "localization": "false", "tickers": "true", "market_data": "true",
-            "community_data": "false", "developer_data": "false", "sparkline": "false"})
-        if d is None:
-            return None
-        mcap = ((d.get("market_data") or {}).get("market_cap") or {}).get("usd")
-        vols = {}
-        for t in d.get("tickers") or []:
-            if t.get("is_anomaly") or t.get("is_stale"):
-                continue
-            m = (t.get("market") or {}).get("name")
-            v = (t.get("converted_volume") or {}).get("usd") or 0
-            if m:
-                vols[m] = vols.get(m, 0) + v
-        exch = [k for k, _ in sorted(vols.items(), key=lambda x:
+        params = {
+            "localization": "false",
+            "tickers": "true",
+            "market_data": "true",
+            "community_data": "false",
+            "developer_data":
