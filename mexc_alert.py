@@ -221,7 +221,18 @@ def describe(sym, base, cache, btc):
         else:
             out.append("₿ BTC: chưa đủ dữ liệu nến")
     return out
+def market_header(tickers):
+    px = {d.get("symbol"): d.get("lastPrice") for d in tickers}
 
+    def fmt_price(sym):
+        try:
+            v = float(px.get(sym))
+            return f"{v:,.2f}" if v >= 1 else f"{v:.4f}"
+        except Exception:
+            return "n/a"
+
+    return f"📊 BTC: {fmt_price('BTC_USDT')} | SOL: {fmt_price('SOL_USDT')} (USDT)"
+    
 # ---------- Chương trình chính ----------
 quiet = in_quiet_hours()
 print("Giờ VN:", now_vn().strftime("%H:%M"), "| yên lặng:", quiet,
@@ -265,7 +276,7 @@ elif hits:
     except Exception as e:
         print("Không lấy được nến BTC:", e)
         btc = None
-    lines = [f"🟢 {len(hits)} coin futures tăng ≥{MIN_PCT:.0f}% (24h):", ""]
+       lines = [market_header(tickers), "", f"🟢 {len(hits)} coin futures tăng ≥{MIN_PCT:.0f}% (24h):", ""]
     for i, (pct, sym, price, vol, base) in enumerate(hits):
         lines.append(f"{sym}: +{pct:.2f}% | giá {price} | KL24h ~{vol/1e6:.1f}M USDT")
         if i < MAX_ENRICH:
